@@ -127,6 +127,11 @@ public void OnMapStart()
 
 public void OnRoundEndPost(Event event, const char[] name, bool dontBroadcast)
 {
+	EndLive();
+}
+
+void EndLive()
+{
 	ResetVariables();
 	PrintToChatAll("Round ended");
 }
