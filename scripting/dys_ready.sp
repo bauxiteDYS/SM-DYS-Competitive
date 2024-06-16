@@ -14,9 +14,9 @@ int g_forceConfirm;
 
 public Plugin myinfo = {
 	name = "Dys Comp Ready and Godmode",
-	description = "Players can !ready to start a comp game, and have godmode when not live",
+	description = "Players can !ready up to start a comp game, godmode is enabled during warmup",
 	author = "bauxite",
-	version = "0.1.1",
+	version = "0.1.3",
 	url = "https://github.com/bauxiteDYS/SM-DYS-Ready",
 };
 
