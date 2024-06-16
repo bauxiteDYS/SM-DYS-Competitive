@@ -1,8 +1,8 @@
 #include <sourcemod>
 #include <sdktools>
 
-Handle ForceTimer;
-Handle ListTimer;
+Handle g_forceTimer;
+Handle g_listTimer;
 static char g_soundLive[] = "buttons/button17.wav";
 bool g_isReady[32+1];
 bool g_isLive;
@@ -16,7 +16,7 @@ public Plugin myinfo = {
 	name = "Dys Comp Ready and Godmode",
 	description = "Players can !ready to start a comp game, and have godmode when not live",
 	author = "bauxite",
-	version = "0.1.0",
+	version = "0.1.1",
 	url = "https://github.com/bauxiteDYS/SM-DYS-Ready",
 };
 
@@ -64,7 +64,7 @@ public Action Command_ForceLive(int client, int args)
 	
 		g_forceLive = true;
 		CheckStartMatch();
-		CloseHandle(ForceTimer);
+		CloseHandle(g_forceTimer);
 		return Plugin_Handled;
 	}
 	
@@ -77,9 +77,9 @@ public Action Command_ForceLive(int client, int args)
 		PrintToChatAll("Use command again within 10s to force start round");
 	}
 	
-	if(!IsValidHandle(ForceTimer))
+	if(!IsValidHandle(g_forceTimer))
 	{
-		ForceTimer = CreateTimer(10.0, ResetForce, _, TIMER_FLAG_NO_MAPCHANGE);
+		g_forceTimer = CreateTimer(10.0, ResetForce, _, TIMER_FLAG_NO_MAPCHANGE);
 	}
 	
 	return Plugin_Continue;
@@ -127,11 +127,6 @@ public void OnMapStart()
 
 public void OnRoundEndPost(Event event, const char[] name, bool dontBroadcast)
 {
-	EndLive();
-}
-
-void EndLive()
-{
 	ResetVariables();
 	PrintToChatAll("Round ended");
 }
@@ -160,6 +155,7 @@ public Action Cmd_ReadyList(int client, int args)
 	StrCat(readyMsg, sizeof(readyMsg), "Not ready: ");
 	char name[10];
 	char list[] = ", ";
+	int length;
 	
 	for(int i = 1; i <= MaxClients; i++)
 	{
@@ -168,6 +164,17 @@ public Action Cmd_ReadyList(int client, int args)
 			Format(name, sizeof(name), "%N", i);
 			StrCat(readyMsg, sizeof(readyMsg), name);
 			StrCat(readyMsg, sizeof(readyMsg), list);
+			
+			length = strlen(readyMsg);
+	
+			if(length >= 117)
+			{
+				TrimString(readyMsg);
+				PrintToChatAll("%s", readyMsg);
+				PrintToConsoleAll("%s", readyMsg);
+				
+				Format(readyMsg, sizeof(readyMsg), "%s", "Not ready: ");
+			}		
 		}
 	}
 	
@@ -177,9 +184,9 @@ public Action Cmd_ReadyList(int client, int args)
 	
 	g_listCooldown = true;
 	
-	if(!IsValidHandle(ListTimer))
+	if(!IsValidHandle(g_listTimer))
 	{
-		ListTimer = CreateTimer(5.0, ResetListCooldown, _, TIMER_FLAG_NO_MAPCHANGE);
+		g_listTimer = CreateTimer(5.0, ResetListCooldown, _, TIMER_FLAG_NO_MAPCHANGE);
 	}
 	
 	return Plugin_Handled;
@@ -222,15 +229,18 @@ void CheckStartMatch()
 {
 	int unReady;
 	
-	for(int i = 1; i <= MaxClients; i++)
+	if(!g_forceLive)
 	{
-		if(IsClientInGame(i) && GetClientTeam(i) > 1 && !g_isReady[i])
+		for(int i = 1; i <= MaxClients; i++)
 		{
-			++unReady;
+			if(IsClientInGame(i) && GetClientTeam(i) > 1 && !g_isReady[i])
+			{
+				++unReady;
+			}
 		}
 	}
 	
-	if(unReady == 0 || g_forceLive)
+	if(unReady == 0)
 	{
 		g_isLive = true;
 		g_forceLive = false;
@@ -302,4 +312,3 @@ void SetGodMode(int client)
 		SetEntityFlags(client, GetEntityFlags(client) & ~FL_GODMODE);
 	}
 }
-
