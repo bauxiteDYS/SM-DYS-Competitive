@@ -4,7 +4,7 @@
 Handle g_forceTimer;
 Handle g_listTimer;
 static char g_soundLive[] = "buttons/button17.wav";
-bool g_isReady[32+1];
+bool g_isReady[33+1];
 bool g_isLive;
 bool g_forceLive;
 bool g_listCooldown;
@@ -16,7 +16,7 @@ public Plugin myinfo = {
 	name = "Dys Comp Ready and Godmode",
 	description = "Players can !ready up to start a comp game, godmode is enabled during warmup",
 	author = "bauxite",
-	version = "0.1.3",
+	version = "0.1.5",
 	url = "https://github.com/bauxiteDYS/SM-DYS-Ready",
 };
 
@@ -39,6 +39,11 @@ void ResetVariables()
 	g_forceLive = false;
 	g_forceConfirm = 0;
 	g_godEnabled = true;
+	
+	for(int i = 1; i <= MaxClients; i++)
+	{
+		g_isReady[i] = false;
+	}
 }
 
 void PlayLiveBeep()
@@ -82,7 +87,7 @@ public Action Command_ForceLive(int client, int args)
 		g_forceTimer = CreateTimer(10.0, ResetForce, _, TIMER_FLAG_NO_MAPCHANGE);
 	}
 	
-	return Plugin_Continue;
+	return Plugin_Handled;
 }
 
 public Action ResetForce(Handle timer)
@@ -207,7 +212,7 @@ public Action Cmd_Ready(int client, int args)
 {
 	if(client == 0)
 	{
-		return Plugin_Continue;
+		return Plugin_Handled;
 	}
 	
 	if(g_isLive)
@@ -216,7 +221,12 @@ public Action Cmd_Ready(int client, int args)
 		return Plugin_Handled;
 	}
 	
-	if (g_isReady[client] == true)
+	if(GetClientTeam(client) == 1)
+	{
+		return Plugin_Handled;
+	}
+	
+	if(g_isReady[client] == true)
 	{
 		g_isReady[client] = false;
 	}
