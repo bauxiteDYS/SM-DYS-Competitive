@@ -16,7 +16,7 @@ public Plugin myinfo = {
 	name = "Dys Comp Ready and Godmode",
 	description = "Players can !ready up to start a comp game, godmode is enabled during warmup",
 	author = "bauxite",
-	version = "0.1.5",
+	version = "0.1.7",
 	url = "https://github.com/bauxiteDYS/SM-DYS-Ready",
 };
 
@@ -115,13 +115,8 @@ public void OnPlayerSpawnPost(Handle event, const char[] name, bool dontBroadcas
 	if(g_godEnabled)
 	{
 		int client = GetClientOfUserId(GetEventInt(event, "userid"));
-		RequestFrame(MakeGod, client);
+		RequestFrame(SetGodMode, client);
 	}
-}
-
-void MakeGod(int client)
-{
-	SetGodMode(client);
 }
 
 public void OnMapStart()
@@ -163,32 +158,33 @@ public Action Cmd_ReadyList(int client, int args)
 	
 	char readyMsg[128];
 	StrCat(readyMsg, sizeof(readyMsg), "Not ready: ");
-	char name[10];
+	char name[32];
 	char list[] = ", ";
-	int length;
+	int msgLength;
+	int nameLength;
 	
 	for(int i = 1; i <= MaxClients; i++)
 	{
 		if(IsClientInGame(i) && GetClientTeam(i) > 1 && !g_isReady[i])
 		{
 			Format(name, sizeof(name), "%N", i);
-			StrCat(readyMsg, sizeof(readyMsg), name);
-			StrCat(readyMsg, sizeof(readyMsg), list);
+			nameLength = strlen(name);
+			msgLength = strlen(readyMsg);
 			
-			length = strlen(readyMsg);
-	
-			if(length >= 117)
+			if(nameLength + msgLength >= 125)
 			{
-				TrimString(readyMsg);
+				readyMsg[strlen(readyMsg) - 2] = '\0';
 				PrintToChatAll("%s", readyMsg);
 				PrintToConsoleAll("%s", readyMsg);
-				
 				Format(readyMsg, sizeof(readyMsg), "%s", "Not ready: ");
-			}		
+			}	
+			
+			StrCat(readyMsg, sizeof(readyMsg), name);
+			StrCat(readyMsg, sizeof(readyMsg), list);
 		}
 	}
 	
-	TrimString(readyMsg);
+	readyMsg[strlen(readyMsg) - 2] = '\0';
 	PrintToChatAll("%s", readyMsg);
 	PrintToConsoleAll("%s", readyMsg);
 	
@@ -262,19 +258,11 @@ void CheckStartMatch()
 		g_godEnabled = false;
 		
 		for(int i = 1; i <= MaxClients; i++)
-		{	
-			if(IsClientInGame(i)) 
-			{ 
-				SetGodMode(i); 
-			}
-		}
-	
-		CreateTimer(1.0, GoLive, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-	
-		for(int i = 1; i <= MaxClients; i++)
 		{
 			g_isReady[i] = false;
 		}
+		
+		CreateTimer(1.0, GoLive, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	}
 }
 
@@ -320,10 +308,6 @@ void SetGodMode(int client)
 {
 	if (g_godEnabled)
 	{
-		SetEntityFlags(client, GetEntityFlags(client) | FL_GODMODE);
-	}
-	else
-	{
-		SetEntityFlags(client, GetEntityFlags(client) & ~FL_GODMODE);
+		SetEntityHealth(client, 99999);
 	}
 }
