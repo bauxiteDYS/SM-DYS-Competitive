@@ -16,7 +16,7 @@ public Plugin myinfo = {
 	name = "Dys Comp Ready and Godmode",
 	description = "Players can !ready up to start a comp game, godmode is enabled during warmup",
 	author = "bauxite",
-	version = "0.1.7",
+	version = "0.1.9",
 	url = "https://github.com/bauxiteDYS/SM-DYS-Ready",
 };
 
@@ -25,8 +25,10 @@ public OnPluginStart()
 	RegAdminCmd("sm_god", Command_God, ADMFLAG_GENERIC);	
 	RegAdminCmd("sm_forcelive", Command_ForceLive, ADMFLAG_GENERIC);
 	HookEvent("round_end", OnRoundEndPost, EventHookMode_Post);
-	HookEvent("player_spawn", OnPlayerSpawnPost, EventHookMode_Post);
 	HookEvent("player_team", OnPlayerTeamPost, EventHookMode_Post);
+	HookEvent("player_spawn", OnPlayerSpawnPost, EventHookMode_Post);
+	HookEvent("player_class", OnPlayerSpawnPost, EventHookMode_Post);
+	AddCommandListener(OnLayoutDone, "layoutdone")
 	RegConsoleCmd("sm_ready", Cmd_Ready);
 	RegConsoleCmd("sm_readylist", Cmd_ReadyList);
 	RegConsoleCmd("sm_live", Cmd_Live);
@@ -73,14 +75,7 @@ public Action Command_ForceLive(int client, int args)
 		return Plugin_Handled;
 	}
 	
-	if(g_isLive)
-	{
-		PrintToChatAll("Use command again within 10s to force end round");
-	}
-	else
-	{
-		PrintToChatAll("Use command again within 10s to force start round");
-	}
+	PrintToChatAll("Use command again within 10s to force %s round", g_isLive ? "end" : "start");
 	
 	if(!IsValidHandle(g_forceTimer))
 	{
@@ -117,6 +112,16 @@ public void OnPlayerSpawnPost(Handle event, const char[] name, bool dontBroadcas
 		int client = GetClientOfUserId(GetEventInt(event, "userid"));
 		RequestFrame(SetGodMode, client);
 	}
+}
+
+public Action OnLayoutDone(int client, const char[] command, int argc)
+{
+	if(g_godEnabled)
+	{
+		RequestFrame(SetGodMode, client);
+	}
+	
+	return Plugin_Continue;
 }
 
 public void OnMapStart()
@@ -173,7 +178,7 @@ public Action Cmd_ReadyList(int client, int args)
 			
 			if(nameLength + msgLength >= 125)
 			{
-				readyMsg[strlen(readyMsg) - 2] = '\0';
+				readyMsg[msgLength - 2] = '\0';
 				PrintToChatAll("%s", readyMsg);
 				PrintToConsoleAll("%s", readyMsg);
 				Format(readyMsg, sizeof(readyMsg), "%s", "Not ready: ");
@@ -222,14 +227,7 @@ public Action Cmd_Ready(int client, int args)
 		return Plugin_Handled;
 	}
 	
-	if(g_isReady[client] == true)
-	{
-		g_isReady[client] = false;
-	}
-	else
-	{
-		g_isReady[client] = true;
-	}
+	g_isReady[client] = !g_isReady[client];
 	
 	PrintToChatAll("%N is %s", client, g_isReady[client] ? "ready" : "NOT ready");
 	CheckStartMatch();
