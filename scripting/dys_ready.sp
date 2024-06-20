@@ -9,6 +9,10 @@ bool g_isLive;
 bool g_forceLive;
 bool g_listCooldown;
 bool g_godEnabled;
+bool g_start;
+bool g_corpStart;
+bool g_punkStart;
+bool g_waitingForStart;
 int g_timerBeeps;
 int g_forceConfirm;
 
@@ -16,7 +20,7 @@ public Plugin myinfo = {
 	name = "Dys Comp Ready and Godmode",
 	description = "Players can !ready up to start a comp game, godmode is enabled during warmup",
 	author = "bauxite",
-	version = "0.1.9",
+	version = "0.2.1",
 	url = "https://github.com/bauxiteDYS/SM-DYS-Ready",
 };
 
@@ -32,6 +36,7 @@ public OnPluginStart()
 	RegConsoleCmd("sm_ready", Cmd_Ready);
 	RegConsoleCmd("sm_readylist", Cmd_ReadyList);
 	RegConsoleCmd("sm_live", Cmd_Live);
+	RegConsoleCmd("sm_start", Cmd_Start);
 }
 
 void ResetVariables()
@@ -41,6 +46,12 @@ void ResetVariables()
 	g_forceLive = false;
 	g_forceConfirm = 0;
 	g_godEnabled = true;
+	g_start = false;
+	g_punkStart = false;
+	g_corpStart = false;
+	g_waitingForStart = false;
+	
+	ServerCommand("dys_stats_enabled 0");
 	
 	for(int i = 1; i <= MaxClients; i++)
 	{
@@ -96,18 +107,31 @@ public void OnPlayerTeamPost(Handle event, const char[] name, bool dontBroadcast
 	if(!g_isLive)
 	{
 		int client = GetClientOfUserId(GetEventInt(event, "userid"));
+		int oldTeam = GetEventInt(event, "oldteam");
 		
 		if(g_isReady[client])
 		{
 			g_isReady[client] = false;
 			PrintToChatAll("%N moved team, they are NOT ready", client);
 		}
+		
+		if(g_waitingForStart)
+		{
+			if(oldTeam == 2)
+			{
+				g_punkStart = false;
+			}
+			else if(oldTeam == 3)
+			{
+				g_corpStart = false;
+			}
+		}
 	}
 }
 
 public void OnPlayerSpawnPost(Handle event, const char[] name, bool dontBroadcast)
 {
-	if(g_godEnabled)
+	if(g_godEnabled && !g_isLive)
 	{
 		int client = GetClientOfUserId(GetEventInt(event, "userid"));
 		RequestFrame(SetGodMode, client);
@@ -116,7 +140,7 @@ public void OnPlayerSpawnPost(Handle event, const char[] name, bool dontBroadcas
 
 public Action OnLayoutDone(int client, const char[] command, int argc)
 {
-	if(g_godEnabled)
+	if(g_godEnabled && !g_isLive)
 	{
 		RequestFrame(SetGodMode, client);
 	}
@@ -144,6 +168,36 @@ void EndLive()
 public Action Cmd_Live(int client, int args)
 {
 	PrintToChat(client, "Round is %s", g_isLive ? "Live" : "NOT Live");
+	return Plugin_Handled;
+}
+
+public Action Cmd_Start(int client, int args)
+{
+	if(client == 0 || args > 0)
+	{
+		return Plugin_Handled;
+	}
+	
+	if(g_isLive || g_start || !g_waitingForStart)
+	{
+		return Plugin_Handled;
+	}
+	
+	if(GetClientTeam(client) == 2)
+	{
+		g_punkStart = true;
+	}
+	else if(GetClientTeam(client) == 3)
+	{
+		g_corpStart = true;
+	}
+	
+	if(g_corpStart && g_punkStart)
+	{
+		g_start = true;
+		CheckStartMatch();
+	}
+	
 	return Plugin_Handled;
 }
 
@@ -236,6 +290,11 @@ public Action Cmd_Ready(int client, int args)
 
 void CheckStartMatch()
 {
+	if(g_isLive)
+	{
+		PrintToChatAll("Oops, trying to start match when already live");
+	}
+	
 	int unReady;
 	
 	if(!g_forceLive)
@@ -244,13 +303,30 @@ void CheckStartMatch()
 		{
 			if(IsClientInGame(i) && GetClientTeam(i) > 1 && !g_isReady[i])
 			{
-				++unReady;
+				++unReady;	
 			}
 		}
 	}
 	
 	if(unReady == 0)
 	{
+		if(!g_forceLive && GetTeamClientCount(2) != 5 && GetTeamClientCount(3) != 5)
+		{
+			if(!g_start)
+			{
+				g_waitingForStart = true;
+				PrintToChatAll("Both teams must use !start as teams are not 5v5");
+				return;
+			}
+			else
+			{
+				g_start = false;
+				g_corpStart = false;
+				g_punkStart = false;
+				g_waitingForStart = false;
+			}
+		}
+		
 		g_isLive = true;
 		g_forceLive = false;
 		g_godEnabled = false;
@@ -259,6 +335,8 @@ void CheckStartMatch()
 		{
 			g_isReady[i] = false;
 		}
+		
+		ServerCommand("dys_stats_enabled 1");
 		
 		CreateTimer(1.0, GoLive, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	}
@@ -276,7 +354,7 @@ public Action GoLive(Handle timer)
 	
 	PlayLiveBeep();
 	++g_timerBeeps;
-	PrintToChatAll("Round is going live");
+	PrintToChatAll("Round is going live in %ds", (6 - g_timerBeeps));
 	return Plugin_Continue;
 }
 
@@ -308,4 +386,8 @@ void SetGodMode(int client)
 	{
 		SetEntityHealth(client, 99999);
 	}
+	else
+	{
+		SetEntityHealth(client, 75);
+	}	
 }
