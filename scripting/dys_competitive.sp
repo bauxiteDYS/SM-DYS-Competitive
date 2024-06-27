@@ -3,9 +3,11 @@
 
 Handle g_forceTimer;
 Handle g_listTimer;
+Handle g_liveTimer;
 static char g_soundLive[] = "buttons/button17.wav";
-bool g_isReady[33+1];
+bool g_isReady[65+1];
 bool g_isLive;
+bool g_goingLive;
 bool g_forceLive;
 bool g_listCooldown;
 bool g_godEnabled;
@@ -13,18 +15,21 @@ bool g_start;
 bool g_corpStart;
 bool g_punkStart;
 bool g_waitingForStart;
+bool g_isTVRecording;
 int g_timerBeeps;
 int g_forceConfirm;
+int g_botLive = -1;
+int g_botNot = -1;
 
 public Plugin myinfo = {
-	name = "Dys Comp Ready and Godmode",
-	description = "Players can !ready up to start a comp game, godmode is enabled during warmup",
+	name = "Dys Competitive",
+	description = "Players can !ready up to start a comp round",
 	author = "bauxite",
-	version = "0.2.1",
-	url = "https://github.com/bauxiteDYS/SM-DYS-Ready",
+	version = "0.3.3",
+	url = "",
 };
 
-public OnPluginStart()
+public void OnPluginStart()
 {
 	RegAdminCmd("sm_god", Command_God, ADMFLAG_GENERIC);	
 	RegAdminCmd("sm_forcelive", Command_ForceLive, ADMFLAG_GENERIC);
@@ -32,30 +37,56 @@ public OnPluginStart()
 	HookEvent("player_team", OnPlayerTeamPost, EventHookMode_Post);
 	HookEvent("player_spawn", OnPlayerSpawnPost, EventHookMode_Post);
 	HookEvent("player_class", OnPlayerSpawnPost, EventHookMode_Post);
+	HookEvent("player_connect_client", OnPlayerConnectPre, EventHookMode_Pre);
+	HookEvent("player_disconnect", OnPlayerDisconnectPre, EventHookMode_Pre);
 	AddCommandListener(OnLayoutDone, "layoutdone")
 	RegConsoleCmd("sm_ready", Cmd_Ready);
+	RegConsoleCmd("sm_unready", Cmd_UnReady);
 	RegConsoleCmd("sm_readylist", Cmd_ReadyList);
-	RegConsoleCmd("sm_live", Cmd_Live);
 	RegConsoleCmd("sm_start", Cmd_Start);
 }
 
 void ResetVariables()
 {
 	g_listCooldown = false;
+	g_godEnabled = true;
 	g_isLive = false;
+	g_goingLive = false;
 	g_forceLive = false;
 	g_forceConfirm = 0;
-	g_godEnabled = true;
 	g_start = false;
 	g_punkStart = false;
 	g_corpStart = false;
 	g_waitingForStart = false;
 	
-	ServerCommand("dys_stats_enabled 0");
-	
 	for(int i = 1; i <= MaxClients; i++)
 	{
 		g_isReady[i] = false;
+	}
+}
+
+void ToggleTV()
+{
+	if(g_isLive && !g_isTVRecording)
+	{
+		char mapName[32];
+		GetCurrentMap(mapName, sizeof(mapName));
+		
+		char timestamp[16];
+		FormatTime(timestamp, sizeof(timestamp), "%Y%m%d-%H%M");
+		
+		char demoName[PLATFORM_MAX_PATH];
+		Format(demoName, sizeof(demoName), "%s_%s", mapName, timestamp);
+		
+		ServerCommand("tv_stoprecord");
+		ServerCommand("tv_record \"%s\"", demoName);
+		
+		g_isTVRecording = true;
+	}
+	else if(!g_isLive)
+	{
+		ServerCommand("tv_stoprecord");
+		g_isTVRecording = false;
 	}
 }
 
@@ -68,6 +99,11 @@ void PlayLiveBeep()
 
 public Action Command_ForceLive(int client, int args)
 {
+	if(g_goingLive)
+	{
+		return Plugin_Handled;
+	}
+	
 	++g_forceConfirm;
 	
 	if(g_forceConfirm == 2)
@@ -102,17 +138,72 @@ public Action ResetForce(Handle timer)
 	return Plugin_Stop;
 }
 
+public Action OnPlayerConnectPre(Handle event, const char[] name, bool dontBroadcast)
+{
+	int bot = GetEventInt(event, "bot");
+	
+	PrintToServer("bot connected %d", bot);
+	
+	if(bot == 1)
+	{
+		SetEventBroadcast(event, true);
+	}
+	
+	return Plugin_Continue;
+}
+
+public Action OnPlayerDisconnectPre(Handle event, const char[] name, bool dontBroadcast)
+{
+	int bot = GetEventInt(event, "bot");
+	
+	PrintToServer("bot disconnected %d", bot);
+	
+	if(bot == 1)
+	{
+		SetEventBroadcast(event, true);
+	}
+	
+	return Plugin_Continue;
+}
+
+public void OnClientDisconnect_Post(int client)
+{
+	if(g_isReady[client] && g_goingLive)
+	{
+		g_isReady[client] = false;
+		
+		CheckStartMatch();
+	}
+}
+
 public void OnPlayerTeamPost(Handle event, const char[] name, bool dontBroadcast)
 {
 	if(!g_isLive)
 	{
 		int client = GetClientOfUserId(GetEventInt(event, "userid"));
+		
+		if(client <= 0 || client >= 65)
+		{
+			return;
+		}
+		
+		if(IsFakeClient(client))
+		{
+			return;
+		}
+		
 		int oldTeam = GetEventInt(event, "oldteam");
+		//int Team = GetEventInt(event, "team");
 		
 		if(g_isReady[client])
 		{
 			g_isReady[client] = false;
 			PrintToChatAll("%N moved team, they are NOT ready", client);
+		}
+		
+		if(g_goingLive)
+		{
+			CheckStartMatch();
 		}
 		
 		if(g_waitingForStart)
@@ -151,7 +242,128 @@ public Action OnLayoutDone(int client, const char[] command, int argc)
 public void OnMapStart()
 {
 	ResetVariables();
+	RequestFrame(StatBots);
 	PrecacheSound(g_soundLive);
+}
+
+public void OnMapEnd()
+{
+	g_isTVRecording = false;
+}
+
+void StatBots()
+{
+	int realClientCount;
+	int fakeCount;
+	int statBotsCount;
+	int idBotNot;
+	int idBotLive;
+	char name[8];
+	
+	for(int client = 1; client <= MaxClients; client++)
+	{
+		if(IsClientConnected(client))
+		{
+			if(IsFakeClient(client))
+			{
+				GetClientName(client, name, sizeof(name));
+				//PrintToServer("bot name %s", name);
+				++fakeCount;
+				
+				if(StrEqual("NotLive", name))
+				{
+					idBotNot = client;
+					++statBotsCount;
+				}
+				else if(StrEqual("Live", name))
+				{
+					idBotLive = client;
+					++statBotsCount;
+				}
+			}
+			else
+			{
+				++realClientCount;
+			}
+		}
+	}
+	
+	for(int client = 1; client <= MaxClients; client++)
+	{
+		if(IsClientConnected(client))
+		{
+			if(IsFakeClient(client))
+			{
+				GetClientName(client, name, sizeof(name));
+				//PrintToServer("fake bot name %s", name);
+					
+				if(client != idBotLive && client != idBotNot && (StrContains(name, "Live", true) >= 0))
+				{
+					KickClient(client, "extra StatBots?");
+					--fakeCount;
+				}
+			}
+		}
+	}
+	
+	//PrintToServer("real %d fake %d", realClientCount, fakeCount);
+	
+	if(realClientCount < 1 || (realClientCount + fakeCount) >= (MaxClients - statBotsCount))
+	{
+		PrintToChatAll("Couldn't create StatBot as server is full");
+		return;
+	}
+	
+	if(statBotsCount == 0)
+	{
+		g_botLive = -1;
+		g_botNot = -1;
+	}
+	
+	if(g_isLive == true)
+	{
+		if(idBotNot != 0)
+		{
+			KickClient(idBotNot, "live");
+			g_botNot = -1;
+		}
+		
+		if(idBotLive != 0)
+		{
+			//Live bot is already connected
+			return;
+		}
+		
+		g_botLive = CreateFakeClient("Live");
+		FakeClientCommand(g_botLive, "jointeam 1");
+		
+	}
+	else if(g_isLive == false)
+	{
+		if(idBotLive != 0)
+		{
+			KickClient(idBotLive, "not live");
+			g_botLive = -1;
+		}
+		
+		if(idBotNot != 0)
+		{
+			//NotLive bot is already connected
+			return;
+		}
+		
+		g_botNot = CreateFakeClient("NotLive");
+		FakeClientCommand(g_botNot, "jointeam 1");
+	}		
+}
+
+public void OnClientConnected(int client)
+{
+	if(!IsFakeClient(client))
+	{
+		g_isReady[client] = false;
+		StatBots();
+	}
 }
 
 public void OnRoundEndPost(Event event, const char[] name, bool dontBroadcast)
@@ -162,13 +374,15 @@ public void OnRoundEndPost(Event event, const char[] name, bool dontBroadcast)
 void EndLive()
 {
 	ResetVariables();
-	PrintToChatAll("Round ended");
+	RequestFrame(StatBots);
+	RequestFrame(ToggleTV);
+	PrintToChatAll("Round ended, NOT Live");
 }
 
-public Action Cmd_Live(int client, int args)
+void CancelLive()
 {
-	PrintToChat(client, "Round is %s", g_isLive ? "Live" : "NOT Live");
-	return Plugin_Handled;
+	EndLive();
+	PrintToChatAll("Round going Live was cancelled!");
 }
 
 public Action Cmd_Start(int client, int args)
@@ -180,6 +394,7 @@ public Action Cmd_Start(int client, int args)
 	
 	if(g_isLive || g_start || !g_waitingForStart)
 	{
+		PrintToChat(client, "Not expecting !start");
 		return Plugin_Handled;
 	}
 	
@@ -263,6 +478,37 @@ public Action ResetListCooldown(Handle timer)
 	return Plugin_Stop;
 }
 
+public Action Cmd_UnReady(int client, int args)
+{
+	if(client == 0)
+	{
+		return Plugin_Handled;
+	}
+	
+	if(g_isLive)
+	{
+		PrintToChat(client, "Round is already Live!");
+		return Plugin_Handled;
+	}
+	
+	if(GetClientTeam(client) == 1)
+	{
+		return Plugin_Handled;
+	}
+	
+	if(!g_isReady[client])
+	{
+		PrintToChat(client, "You are already marked as unready");
+		return Plugin_Handled;
+	}
+	
+	g_isReady[client] = false;
+	
+	PrintToChatAll("%N is NOT ready", client);
+	CheckStartMatch();
+	return Plugin_Handled;
+}
+
 public Action Cmd_Ready(int client, int args)
 {
 	if(client == 0)
@@ -281,9 +527,15 @@ public Action Cmd_Ready(int client, int args)
 		return Plugin_Handled;
 	}
 	
-	g_isReady[client] = !g_isReady[client];
+	if(g_isReady[client])
+	{
+		PrintToChat(client, "You are already marked as ready, use !unready to revert this");
+		return Plugin_Handled;
+	}
 	
-	PrintToChatAll("%N is %s", client, g_isReady[client] ? "ready" : "NOT ready");
+	g_isReady[client] = true;
+	
+	PrintToChatAll("%N is ready", client);
 	CheckStartMatch();
 	return Plugin_Handled;
 }
@@ -293,6 +545,7 @@ void CheckStartMatch()
 	if(g_isLive)
 	{
 		PrintToChatAll("Oops, trying to start match when already live");
+		return;
 	}
 	
 	int unReady;
@@ -306,6 +559,11 @@ void CheckStartMatch()
 				++unReady;	
 			}
 		}
+	}
+	
+	if(unReady > 0 && g_goingLive)
+	{
+		CancelLive();
 	}
 	
 	if(unReady == 0)
@@ -327,26 +585,39 @@ void CheckStartMatch()
 			}
 		}
 		
+		g_goingLive = true;
+		
+		if(!IsValidHandle(g_liveTimer))
+		{
+			g_liveTimer = CreateTimer(1.0, GoingLive, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+		}
+	}
+}
+
+public Action GoingLive(Handle timer)
+{
+	if(!g_goingLive || g_isLive)
+	{
+		return Plugin_Stop;
+	}
+	
+	if(g_timerBeeps == 9)
+	{
 		g_isLive = true;
+		g_goingLive = false;
 		g_forceLive = false;
 		g_godEnabled = false;
+		
+		RequestFrame(StatBots);
+		RequestFrame(ToggleTV);
 		
 		for(int i = 1; i <= MaxClients; i++)
 		{
 			g_isReady[i] = false;
 		}
 		
-		ServerCommand("dys_stats_enabled 1");
-		
-		CreateTimer(1.0, GoLive, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-	}
-}
-
-public Action GoLive(Handle timer)
-{
-	if(g_timerBeeps == 5)
-	{
 		g_timerBeeps = 0;
+		
 		ServerCommand("map_restart");
 		PrintToChatAll("Round is live!");
 		return Plugin_Stop;
@@ -354,13 +625,13 @@ public Action GoLive(Handle timer)
 	
 	PlayLiveBeep();
 	++g_timerBeeps;
-	PrintToChatAll("Round is going live in %ds", (6 - g_timerBeeps));
+	PrintToChatAll("Round is going live in: %d", (10 - g_timerBeeps));
 	return Plugin_Continue;
 }
 
 public Action Command_God(int client, int args)
 {
-	if(g_isLive)
+	if(g_isLive || g_goingLive)
 	{
 		PrintToChatAll("Can't toggle Godmode when round is live");
 		return Plugin_Handled;
