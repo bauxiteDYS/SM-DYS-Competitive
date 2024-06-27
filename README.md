@@ -1,3 +1,3 @@
-# SM-DYS-Ready
-Sourcemod plugin for Dystopia that enables "godmode" (a lot of hp, so players can still practice mechanics) during warmup and assists players in readying up.  
+# SM-DYS-Competitive
+Sourcemod plugin for Dystopia that enables competitive play, players can !ready up to go live, "godmode" is enabled during warmup rounds.
 Credits to Rain for the help and for writing a lot of code to learn from :)
