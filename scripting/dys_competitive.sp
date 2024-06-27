@@ -15,9 +15,10 @@ bool g_start;
 bool g_corpStart;
 bool g_punkStart;
 bool g_waitingForStart;
-bool g_isTVRecording;
 int g_timerBeeps;
 int g_forceConfirm;
+
+bool g_isTVRecording;
 int g_botLive = -1;
 int g_botNot = -1;
 
@@ -25,7 +26,7 @@ public Plugin myinfo = {
 	name = "Dys Competitive",
 	description = "Players can !ready up to start a comp round",
 	author = "bauxite",
-	version = "0.3.3",
+	version = "0.3.5",
 	url = "",
 };
 
@@ -44,6 +45,11 @@ public void OnPluginStart()
 	RegConsoleCmd("sm_unready", Cmd_UnReady);
 	RegConsoleCmd("sm_readylist", Cmd_ReadyList);
 	RegConsoleCmd("sm_start", Cmd_Start);
+	
+	if(!DirExists("demos", false))
+	{
+		CreateDirectory("demos",775);
+	}
 }
 
 void ResetVariables()
@@ -54,6 +60,7 @@ void ResetVariables()
 	g_goingLive = false;
 	g_forceLive = false;
 	g_forceConfirm = 0;
+	g_timerBeeps = 0;
 	g_start = false;
 	g_punkStart = false;
 	g_corpStart = false;
@@ -79,7 +86,7 @@ void ToggleTV()
 		Format(demoName, sizeof(demoName), "%s_%s", mapName, timestamp);
 		
 		ServerCommand("tv_stoprecord");
-		ServerCommand("tv_record \"%s\"", demoName);
+		ServerCommand("tv_record \"demos\\%s\"", demoName);
 		
 		g_isTVRecording = true;
 	}
@@ -142,8 +149,6 @@ public Action OnPlayerConnectPre(Handle event, const char[] name, bool dontBroad
 {
 	int bot = GetEventInt(event, "bot");
 	
-	PrintToServer("bot connected %d", bot);
-	
 	if(bot == 1)
 	{
 		SetEventBroadcast(event, true);
@@ -155,8 +160,6 @@ public Action OnPlayerConnectPre(Handle event, const char[] name, bool dontBroad
 public Action OnPlayerDisconnectPre(Handle event, const char[] name, bool dontBroadcast)
 {
 	int bot = GetEventInt(event, "bot");
-	
-	PrintToServer("bot disconnected %d", bot);
 	
 	if(bot == 1)
 	{
@@ -267,7 +270,6 @@ void StatBots()
 			if(IsFakeClient(client))
 			{
 				GetClientName(client, name, sizeof(name));
-				//PrintToServer("bot name %s", name);
 				++fakeCount;
 				
 				if(StrEqual("NotLive", name))
@@ -295,7 +297,6 @@ void StatBots()
 			if(IsFakeClient(client))
 			{
 				GetClientName(client, name, sizeof(name));
-				//PrintToServer("fake bot name %s", name);
 					
 				if(client != idBotLive && client != idBotNot && (StrContains(name, "Live", true) >= 0))
 				{
@@ -306,9 +307,7 @@ void StatBots()
 		}
 	}
 	
-	//PrintToServer("real %d fake %d", realClientCount, fakeCount);
-	
-	if(realClientCount < 1 || (realClientCount + fakeCount) >= (MaxClients - statBotsCount))
+	if(realClientCount == 0 || (realClientCount + fakeCount) == MaxClients)
 	{
 		PrintToChatAll("Couldn't create StatBot as server is full");
 		return;
