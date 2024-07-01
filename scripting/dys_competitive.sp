@@ -1,10 +1,13 @@
-#include <sourcemod>
 #include <sdktools>
 
+ConVar g_stvName;
+ConVar g_demoPath;
 Handle g_forceTimer;
 Handle g_listTimer;
 Handle g_liveTimer;
+static char g_newDemoPath[128];
 static char g_soundLive[] = "buttons/button17.wav";
+
 bool g_isReady[65+1];
 bool g_isLive;
 bool g_goingLive;
@@ -19,6 +22,7 @@ int g_timerBeeps;
 int g_forceConfirm;
 
 bool g_isTVRecording;
+int g_stvID = -1;
 int g_botLive = -1;
 int g_botNot = -1;
 
@@ -26,7 +30,7 @@ public Plugin myinfo = {
 	name = "Dys Competitive",
 	description = "Players can !ready up to start a comp round",
 	author = "bauxite",
-	version = "0.3.5",
+	version = "0.3.7",
 	url = "",
 };
 
@@ -45,10 +49,38 @@ public void OnPluginStart()
 	RegConsoleCmd("sm_unready", Cmd_UnReady);
 	RegConsoleCmd("sm_readylist", Cmd_ReadyList);
 	RegConsoleCmd("sm_start", Cmd_Start);
+	g_demoPath = CreateConVar("sm_comp_demo_path", "comp_demos", "Folder to save STV demos into, relative to game folder");
+}
+
+public void OnConfigsExecuted()
+{
+	CreateDemoPath();
+	g_stvID = FindSTV();
+}
+
+void CreateDemoPath()
+{
+	char path[64+1];
+	g_demoPath.GetString(path, sizeof(path));
 	
-	if(!DirExists("demos", false))
+	TrimString(path);
+	int len = strlen(path);
+	
+	for(int chr = 0; chr < len; chr++)
 	{
-		CreateDirectory("demos",775);
+		if(IsCharAlpha(path[chr]) || IsCharNumeric(path[chr]) || path[chr] == '_' || path[chr] == '-')
+		{
+			continue;
+		}
+		
+		path[chr] = '0';
+	}
+	
+	strcopy(g_newDemoPath, sizeof(g_newDemoPath), path);
+	
+	if(!DirExists(g_newDemoPath, false))
+	{
+		CreateDirectory(g_newDemoPath, 509);
 	}
 }
 
@@ -86,7 +118,7 @@ void ToggleTV()
 		Format(demoName, sizeof(demoName), "%s_%s", mapName, timestamp);
 		
 		ServerCommand("tv_stoprecord");
-		ServerCommand("tv_record \"demos\\%s\"", demoName);
+		ServerCommand("tv_record \"%s\\%s\"", g_newDemoPath, demoName);
 		
 		g_isTVRecording = true;
 	}
@@ -254,6 +286,32 @@ public void OnMapEnd()
 	g_isTVRecording = false;
 }
 
+int FindSTV()
+{
+	char tvName[MAX_NAME_LENGTH];
+	g_stvName = FindConVar("tv_name");
+	g_stvName.GetString(tvName, sizeof(tvName));
+
+	char clientName[MAX_NAME_LENGTH];
+	
+	for (int client = 1; client <= MaxClients; client++)
+	{
+		if (!IsClientInGame(client) || !IsFakeClient(client))
+		{
+			continue;
+		}
+		
+		GetClientName(client, clientName, sizeof(clientName));
+
+		if (StrEqual(clientName, tvName) || StrEqual(clientName, "SourceTV"))
+		{
+			return client;
+		}
+	}
+
+	return -1;
+}
+
 void StatBots()
 {
 	int realClientCount;
@@ -292,19 +350,25 @@ void StatBots()
 	
 	for(int client = 1; client <= MaxClients; client++)
 	{
-		if(IsClientConnected(client))
+		if(!IsClientConnected(client) || !IsFakeClient(client))
 		{
-			if(IsFakeClient(client))
-			{
-				GetClientName(client, name, sizeof(name));
-					
-				if(client != idBotLive && client != idBotNot && (StrContains(name, "Live", true) >= 0))
-				{
-					KickClient(client, "extra StatBots?");
-					--fakeCount;
-				}
-			}
+			continue;
 		}
+					
+		if(client == idBotLive || client == idBotNot || client == g_stvID)
+		{
+			continue;
+		}
+		
+		GetClientName(client, name, sizeof(name));
+		
+		if(StrContains(name, "Live", true) == -1)
+		{
+			continue;
+		}
+		
+		KickClient(client, "extra StatBots?");
+		--fakeCount;	
 	}
 	
 	if(realClientCount == 0 || (realClientCount + fakeCount) == MaxClients)
@@ -313,7 +377,7 @@ void StatBots()
 		return;
 	}
 	
-	if(statBotsCount == 0)
+	if(statBotsCount == 0) // In case bots were manually kicked
 	{
 		g_botLive = -1;
 		g_botNot = -1;
@@ -321,13 +385,13 @@ void StatBots()
 	
 	if(g_isLive == true)
 	{
-		if(idBotNot != 0)
+		if(idBotNot > 0)
 		{
 			KickClient(idBotNot, "live");
 			g_botNot = -1;
 		}
 		
-		if(idBotLive != 0)
+		if(idBotLive > 0)
 		{
 			//Live bot is already connected
 			return;
@@ -339,13 +403,13 @@ void StatBots()
 	}
 	else if(g_isLive == false)
 	{
-		if(idBotLive != 0)
+		if(idBotLive > 0)
 		{
 			KickClient(idBotLive, "not live");
 			g_botLive = -1;
 		}
 		
-		if(idBotNot != 0)
+		if(idBotNot > 0)
 		{
 			//NotLive bot is already connected
 			return;
