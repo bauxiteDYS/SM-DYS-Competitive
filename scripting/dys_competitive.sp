@@ -14,6 +14,7 @@ int g_botLive = -1;
 int g_botNot = -1;
 
 bool g_isReady[65+1];
+bool g_isPlaying[65+1];
 bool g_isLive;
 bool g_goingLive;
 bool g_forceLive;
@@ -30,8 +31,8 @@ public Plugin myinfo = {
 	name = "Dys Competitive",
 	description = "Players can !ready up to start a comp round",
 	author = "bauxite",
-	version = "0.3.9",
-	url = "",
+	version = "0.5.0",
+	url = "https://github.com/bauxiteDYS/SM-DYS-Competitive",
 };
 
 public void OnPluginStart()
@@ -73,6 +74,7 @@ public void OnMapEnd()
 public void OnClientConnected(int client)
 {
 	g_isReady[client] = false;
+	g_isPlaying[client] = false;
 	RequestFrame(StatBots);
 }
 
@@ -154,6 +156,7 @@ void ResetVariables()
 	for(int i = 1; i <= MaxClients; i++)
 	{
 		g_isReady[i] = false;
+		g_isPlaying[i] = false;
 	}
 }
 
@@ -620,6 +623,20 @@ void CheckStartMatch()
 		return;
 	}
 	
+	if(g_goingLive)
+	{
+		for(int i = 1; i <= MaxClients; i++)
+		{
+			if(g_isPlaying[i] && !g_isReady[i])
+			{
+				CancelLive();
+				break;
+			}
+		}
+		
+		return;
+	}
+	
 	int unReady;
 	
 	if(!g_forceLive)
@@ -633,27 +650,33 @@ void CheckStartMatch()
 		}
 	}
 	
-	if(unReady > 0 && g_goingLive)
-	{
-		CancelLive();
-	}
-	
 	if(unReady == 0)
 	{
-		if(!g_forceLive && GetTeamClientCount(2) != 5 && GetTeamClientCount(3) != 5)
+		if(!g_forceLive)
 		{
-			if(!g_start)
+			if(GetTeamClientCount(2) != 5 && GetTeamClientCount(3) != 5)
 			{
-				g_waitingForStart = true;
-				PrintToChatAll("Both teams must use !start as teams are not 5v5");
-				return;
+				if(!g_start)
+				{
+					g_waitingForStart = true;
+					PrintToChatAll("Both teams must use !start as teams are not 5v5");
+					return;
+				}
+				else
+				{
+					g_start = false;
+					g_corpStart = false;
+					g_punkStart = false;
+					g_waitingForStart = false;
+				}
 			}
-			else
+		}
+		
+		for(int i = 1; i <= MaxClients; i++)
+		{
+			if(IsClientInGame(i) && GetClientTeam(i) > 1)
 			{
-				g_start = false;
-				g_corpStart = false;
-				g_punkStart = false;
-				g_waitingForStart = false;
+				g_isPlaying[i] = true;
 			}
 		}
 		
@@ -687,6 +710,7 @@ public Action GoingLive(Handle timer)
 		for(int i = 1; i <= MaxClients; i++)
 		{
 			g_isReady[i] = false;
+			g_isPlaying[i] = false;
 		}
 		
 		g_timerBeeps = 0;
