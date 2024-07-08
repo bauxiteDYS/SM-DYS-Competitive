@@ -2,6 +2,7 @@
 
 ConVar g_stvName;
 ConVar g_demoPath;
+ConVar g_cvarAutoRecord = null;
 Handle g_forceTimer;
 Handle g_listTimer;
 Handle g_liveTimer;
@@ -9,6 +10,7 @@ static char g_newDemoPath[128];
 static char g_soundLive[] = "buttons/button17.wav";
 
 bool g_isTVRecording;
+bool g_autoRecording;
 int g_stvID = -1;
 int g_botLive = -1;
 int g_botNot = -1;
@@ -31,7 +33,7 @@ public Plugin myinfo = {
 	name = "Dys Competitive",
 	description = "Players can !ready up to start a comp round",
 	author = "bauxite",
-	version = "0.5.0",
+	version = "0.5.1",
 	url = "https://github.com/bauxiteDYS/SM-DYS-Competitive",
 };
 
@@ -62,6 +64,18 @@ public void OnMapStart()
 
 public void OnConfigsExecuted()
 {
+	g_cvarAutoRecord = FindConVar("tv_autorecord");
+		
+	if (g_cvarAutoRecord != null)
+	{
+		g_autoRecording = g_cvarAutoRecord.BoolValue;
+		PrintToServer("STV Auto Record %s", g_autoRecording ? "enabled" : "disabled");
+	}
+	else
+	{
+		g_autoRecording = false;
+	}
+	
 	CreateDemoPath();
 	RequestFrame(StatBots);
 }
@@ -107,27 +121,39 @@ public void OnClientDisconnect_Post(int client)
 
 void CreateDemoPath()
 {
-	char path[64+1];
-	g_demoPath.GetString(path, sizeof(path));
+	if(g_autoRecording)
+	{
+		return;
+	}
 	
+	char path[64+1];
+	
+	g_demoPath.GetString(path, sizeof(path));
 	TrimString(path);
 	int len = strlen(path);
 	
-	for(int chr = 0; chr < len; chr++)
+	if(len != 0)
 	{
-		if(IsCharAlpha(path[chr]) || IsCharNumeric(path[chr]) || path[chr] == '_' || path[chr] == '-')
+		for(int chr = 0; chr < len; chr++)
 		{
-			continue;
-		}
+			if(IsCharAlpha(path[chr]) || IsCharNumeric(path[chr]) || path[chr] == '_' || path[chr] == '-')
+			{
+				continue;
+			}
 		
-		path[chr] = '0';
-	}
+			path[chr] = '0';
+		}
 	
-	strcopy(g_newDemoPath, sizeof(g_newDemoPath), path);
+		strcopy(g_newDemoPath, sizeof(g_newDemoPath), path);
+	}
+	else
+	{
+		strcopy(g_newDemoPath, sizeof(g_newDemoPath), "comp_demos");
+	}
 	
 	if(!DirExists(g_newDemoPath, false))
 	{
-		CreateDirectory(g_newDemoPath, 509);
+		CreateDirectory(g_newDemoPath, 0o775); // 509 in decimal, using octal to make it easier
 	}
 }
 
@@ -162,6 +188,11 @@ void ResetVariables()
 
 void ToggleTV()
 {
+	if(g_autoRecording)
+	{
+		return;
+	}
+	
 	if(g_isLive && !g_isTVRecording)
 	{
 		char mapName[32];
@@ -623,6 +654,19 @@ void CheckStartMatch()
 		return;
 	}
 	
+	if(g_forceLive)
+	{
+		if(!g_goingLive)
+		{
+			StartingMatch()
+			return;
+		}
+		else if (g_goingLive)
+		{
+			return;
+		}
+	}
+	
 	if(g_goingLive)
 	{
 		for(int i = 1; i <= MaxClients; i++)
@@ -639,53 +683,54 @@ void CheckStartMatch()
 	
 	int unReady;
 	
-	if(!g_forceLive)
+	for(int i = 1; i <= MaxClients; i++)
 	{
-		for(int i = 1; i <= MaxClients; i++)
+		if(IsClientInGame(i) && GetClientTeam(i) > 1 && !g_isReady[i])
 		{
-			if(IsClientInGame(i) && GetClientTeam(i) > 1 && !g_isReady[i])
-			{
-				++unReady;	
-			}
+			++unReady;	
 		}
 	}
 	
 	if(unReady == 0)
 	{
-		if(!g_forceLive)
-		{
-			if(GetTeamClientCount(2) != 5 && GetTeamClientCount(3) != 5)
-			{
-				if(!g_start)
-				{
-					g_waitingForStart = true;
-					PrintToChatAll("Both teams must use !start as teams are not 5v5");
-					return;
-				}
-				else
-				{
-					g_start = false;
-					g_corpStart = false;
-					g_punkStart = false;
-					g_waitingForStart = false;
-				}
-			}
-		}
+		return;
+	}
 		
-		for(int i = 1; i <= MaxClients; i++)
+	if(GetTeamClientCount(2) != 5 && GetTeamClientCount(3) != 5)
+	{
+		if(!g_start)
 		{
-			if(IsClientInGame(i) && GetClientTeam(i) > 1)
-			{
-				g_isPlaying[i] = true;
-			}
+			g_waitingForStart = true;
+			PrintToChatAll("Both teams must use !start as teams are not 5v5");
+			return;
 		}
-		
-		g_goingLive = true;
-		
-		if(!IsValidHandle(g_liveTimer))
+		else
 		{
-			g_liveTimer = CreateTimer(1.0, GoingLive, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+			g_start = false;
+			g_corpStart = false;
+			g_punkStart = false;
+			g_waitingForStart = false;
 		}
+	}
+		
+	for(int i = 1; i <= MaxClients; i++)
+	{
+		if(IsClientInGame(i) && GetClientTeam(i) > 1)
+		{
+			g_isPlaying[i] = true;
+		}
+	}
+	
+	StartingMatch();
+}
+
+void StartingMatch()
+{
+	g_goingLive = true;
+		
+	if(!IsValidHandle(g_liveTimer))
+	{
+		g_liveTimer = CreateTimer(1.0, GoingLive, _, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
 	}
 }
 
