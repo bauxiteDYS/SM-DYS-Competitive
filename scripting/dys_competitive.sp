@@ -33,7 +33,7 @@ public Plugin myinfo = {
 	name = "Dys Competitive",
 	description = "Players can !ready up to start a comp round",
 	author = "bauxite",
-	version = "0.5.1",
+	version = "0.5.3",
 	url = "https://github.com/bauxiteDYS/SM-DYS-Competitive",
 };
 
@@ -88,7 +88,14 @@ public void OnMapEnd()
 public void OnClientConnected(int client)
 {
 	g_isReady[client] = false;
-	g_isPlaying[client] = false;
+	
+	if(IsFakeClient(client))
+	{
+		return;
+	}
+	
+	// check if client is called "NotLive" or "Live"?
+	
 	RequestFrame(StatBots);
 }
 
@@ -112,6 +119,11 @@ public void OnClientDisconnect_Post(int client)
 	}
 	
 	g_isReady[client] = false;
+	
+	if(IsFakeClient(client))
+	{
+		return;
+	}
 	
 	if(g_goingLive)
 	{
@@ -368,73 +380,83 @@ void StatBots()
 {
 	int realClientCount;
 	int fakeCount;
-	int statBotsCount;
+	int liveBotsCount;
+	int notBotsCount;
 	int idBotNot;
 	int idBotLive;
-	char name[8];
+	char name[11];
 	
 	g_stvID = FindSTV();
 		
 	for(int client = 1; client <= MaxClients; client++)
 	{
-		if(IsClientConnected(client))
+		if(!IsClientConnected(client))
 		{
-			if(IsFakeClient(client))
-			{
-				GetClientName(client, name, sizeof(name));
-				++fakeCount;
+			continue;
+		}
+		
+		if(IsFakeClient(client))
+		{
+			++fakeCount;
+			GetClientName(client, name, sizeof(name));
 				
-				if(StrEqual("NotLive", name))
-				{
-					idBotNot = client;
-					++statBotsCount;
-				}
-				else if(StrEqual("Live", name))
-				{
-					idBotLive = client;
-					++statBotsCount;
-				}
-			}
-			else
+			if(StrContains(name, "NotLive", true) >= 0)
 			{
-				++realClientCount;
+				idBotNot = client;
+				++notBotsCount;
+			}
+			else if(StrContains(name, "Live", true) >= 0)
+			{
+				idBotLive = client;
+				++liveBotsCount;
 			}
 		}
+		else
+		{
+			++realClientCount;
+		}
 	}
 	
-	for(int client = 1; client <= MaxClients; client++)
+	if((liveBotsCount + notBotsCount) == 0) // In case bots were manually kicked
 	{
-		if(!IsClientConnected(client) || !IsFakeClient(client))
-		{
-			continue;
-		}
-					
-		if(client == idBotLive || client == idBotNot || client == g_stvID)
-		{
-			continue;
-		}
-		
-		GetClientName(client, name, sizeof(name));
-		
-		if(StrContains(name, "Live", true) == -1)
-		{
-			continue;
-		}
-		
-		KickClient(client, "extra StatBots?");
-		--fakeCount;	
+		g_botLive = -1;
+		g_botNot = -1;
 	}
 	
-	if(realClientCount == 0 || (realClientCount + fakeCount) == MaxClients)
+	if(liveBotsCount > 1 || notBotsCount > 1)
+	{
+		for(int client = 1; client <= MaxClients; client++)
+		{
+			if(!IsClientConnected(client) || !IsFakeClient(client))
+			{
+				continue;
+			}
+					
+			if(client == idBotLive || client == idBotNot || client == g_stvID)
+			{
+				continue;
+			}
+		
+			GetClientName(client, name, sizeof(name));
+		
+			if(StrContains(name, "Live", true) == -1)
+			{
+				continue;
+			}
+		
+			KickClient(client, "extra StatBots?");
+			--fakeCount;	
+		}
+	}
+	
+	if((realClientCount + fakeCount) == MaxClients)
 	{
 		PrintToChatAll("Couldn't create StatBot as server is full");
 		return;
 	}
-	
-	if(statBotsCount == 0) // In case bots were manually kicked
+	else if(realClientCount == 0)
 	{
-		g_botLive = -1;
-		g_botNot = -1;
+		return;
 	}
 	
 	if(g_isLive == true)
@@ -526,9 +548,9 @@ public Action Cmd_Start(int client, int args)
 
 public Action Cmd_ReadyList(int client, int args)
 {
-	if(g_isLive)
+	if(g_isLive || g_goingLive)
 	{
-		PrintToChat(client, "Round is Live");
+		PrintToChat(client, "Round is Live or going Live");
 		return Plugin_Handled;
 	}
 	
