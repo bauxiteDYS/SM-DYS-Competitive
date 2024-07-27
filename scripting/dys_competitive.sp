@@ -474,7 +474,15 @@ void StatBots()
 		}
 		
 		g_botLive = CreateFakeClient("Live");
-		FakeClientCommand(g_botLive, "jointeam 1");
+		
+		if(g_botLive > 0)
+		{
+			FakeClientCommand(g_botLive, "jointeam 1");
+		}
+		else
+		{
+			PrintToChatAll("Error: Could not create bot");
+		}
 		
 	}
 	else if(g_isLive == false)
@@ -492,7 +500,15 @@ void StatBots()
 		}
 		
 		g_botNot = CreateFakeClient("NotLive");
-		FakeClientCommand(g_botNot, "jointeam 1");
+		
+		if(g_botNot > 0)
+		{
+			FakeClientCommand(g_botNot, "jointeam 1");
+		}
+		else
+		{
+			PrintToChatAll("Error: Could not create bot");
+		}
 	}		
 }
 
