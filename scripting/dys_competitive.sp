@@ -33,7 +33,7 @@ public Plugin myinfo = {
 	name = "Dys Competitive",
 	description = "Players can !ready up to start a comp round",
 	author = "bauxite",
-	version = "0.5.3",
+	version = "0.5.5",
 	url = "https://github.com/bauxiteDYS/SM-DYS-Competitive",
 };
 
@@ -729,7 +729,7 @@ void CheckStartMatch()
 		}
 	}
 	
-	if(unReady == 0)
+	if(unReady != 0)
 	{
 		return;
 	}
