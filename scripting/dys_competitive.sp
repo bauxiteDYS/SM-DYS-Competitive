@@ -822,7 +822,7 @@ public Action Command_God(int client, int args)
 	
 	for(int i = 1; i <= MaxClients; i++)
 	{	
-		if(IsClientInGame(i)) 
+		if(IsClientInGame(i)) // exclude specs?
 		{ 
 			SetGodMode(i); 
 		}
