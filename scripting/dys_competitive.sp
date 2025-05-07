@@ -1,4 +1,11 @@
+#pragma semicolon 1
+#pragma newdecls required
+
+#include <sourcemod>
 #include <sdktools>
+
+#define TEAM_PUNKS 2
+#define TEAM_CORPS 3
 
 ConVar g_stvName;
 ConVar g_demoPath;
@@ -33,7 +40,7 @@ public Plugin myinfo = {
 	name = "Dys Competitive",
 	description = "Players can !ready up to start a comp round",
 	author = "bauxite",
-	version = "0.5.6",
+	version = "0.5.7",
 	url = "https://github.com/bauxiteDYS/SM-DYS-Competitive",
 };
 
@@ -47,7 +54,7 @@ public void OnPluginStart()
 	HookEvent("player_class", OnPlayerSpawnPost, EventHookMode_Post);
 	HookEvent("player_connect_client", OnBotPre, EventHookMode_Pre);
 	HookEvent("player_disconnect", OnBotPre, EventHookMode_Pre);
-	AddCommandListener(OnLayoutDone, "layoutdone")
+	AddCommandListener(OnLayoutDone, "layoutdone");
 	RegConsoleCmd("sm_ready", Cmd_Ready);
 	RegConsoleCmd("sm_unready", Cmd_Ready);
 	RegConsoleCmd("sm_readylist", Cmd_ReadyList);
@@ -310,11 +317,11 @@ public void OnPlayerTeamPost(Handle event, const char[] name, bool dontBroadcast
 		
 	if(g_waitingForStart)
 	{
-		if(oldTeam == 2)
+		if(oldTeam == TEAM_PUNKS)
 		{
 			g_punkStart = false;
 		}
-		else if(oldTeam == 3)
+		else if(oldTeam == TEAM_CORPS)
 		{
 			g_corpStart = false;
 		}
@@ -544,11 +551,11 @@ public Action Cmd_Start(int client, int args)
 		return Plugin_Handled;
 	}
 	
-	if(GetClientTeam(client) == 2)
+	if(GetClientTeam(client) == TEAM_PUNKS)
 	{
 		g_punkStart = true;
 	}
-	else if(GetClientTeam(client) == 3)
+	else if(GetClientTeam(client) == TEAM_CORPS)
 	{
 		g_corpStart = true;
 	}
@@ -696,7 +703,7 @@ void CheckStartMatch()
 	{
 		if(!g_goingLive)
 		{
-			StartingMatch()
+			StartingMatch();
 			return;
 		}
 		else if (g_goingLive)
@@ -734,7 +741,7 @@ void CheckStartMatch()
 		return;
 	}
 		
-	if(GetTeamClientCount(2) != 5 || GetTeamClientCount(3) != 5)
+	if(GetTeamClientCount(TEAM_PUNKS) != 5 || GetTeamClientCount(TEAM_CORPS) != 5)
 	{
 		if(!g_start)
 		{
