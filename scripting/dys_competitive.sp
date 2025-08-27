@@ -4,23 +4,25 @@
 #include <sourcemod>
 #include <sdktools>
 
+#define DEBUG true
+
 #define TEAM_PUNKS 2
 #define TEAM_CORPS 3
+
+Handle g_forceTimer;
+Handle g_listTimer;
+Handle g_liveTimer;
 
 ConVar g_stvName;
 ConVar g_demoPath;
 ConVar g_cvarAutoRecord = null;
-Handle g_forceTimer;
-Handle g_listTimer;
-Handle g_liveTimer;
-static char g_newDemoPath[128];
-static char g_soundLive[] = "buttons/button17.wav";
+
+char g_tag[] = "[Comp]";
+char g_newDemoPath[128];
+char g_soundLive[] = "buttons/button17.wav";
 
 bool g_isTVRecording;
 bool g_autoRecording;
-int g_stvID = -1;
-int g_botLive = -1;
-int g_botNot = -1;
 
 bool g_isReady[65+1];
 bool g_isPlaying[65+1];
@@ -33,14 +35,21 @@ bool g_start;
 bool g_corpStart;
 bool g_punkStart;
 bool g_waitingForStart;
+
+int g_stvID = -1;
+int g_botLive = -1;
+int g_botNot = -1;
+
 int g_timerBeeps;
 int g_forceConfirm;
+
+float g_lastReadyTime[65+1];
 
 public Plugin myinfo = {
 	name = "Dys Competitive",
 	description = "Players can !ready up to start a comp round",
 	author = "bauxite",
-	version = "0.5.7",
+	version = "0.6.0",
 	url = "https://github.com/bauxiteDYS/SM-DYS-Competitive",
 };
 
@@ -172,7 +181,7 @@ void CreateDemoPath()
 	
 	if(!DirExists(g_newDemoPath, false))
 	{
-		CreateDirectory(g_newDemoPath, 0o775); // 509 in decimal, using octal to make it easier
+		CreateDirectory(g_newDemoPath, 0o775); // 509 in decimal, using octal? to make it easier
 	}
 }
 
@@ -182,6 +191,11 @@ void ResetOnceOnMapEnd()
 	g_botLive = -1;
 	g_botNot = -1;
 	g_stvID = -1;
+	
+	for(int i = 1; i <= MaxClients; i++)
+	{
+		g_lastReadyTime[i] = 0.0;
+	}
 }
 
 void ResetVariables()
@@ -267,7 +281,7 @@ public Action Command_ForceLive(int client, int args)
 		return Plugin_Handled;
 	}
 	
-	PrintToChatAll("Use command again within 10s to force %s round", g_isLive ? "end" : "start");
+	PrintToChatAll("%s Use command again within 10s to force %s round", g_tag, g_isLive ? "end" : "start");
 	
 	if(!IsValidHandle(g_forceTimer))
 	{
@@ -285,6 +299,10 @@ public Action ResetForce(Handle timer)
 
 public void OnPlayerTeamPost(Handle event, const char[] name, bool dontBroadcast)
 {
+	#if DEBUG
+	PrintToServer("%s OnTeamPost event", g_tag);
+	#endif
+	
 	if(g_isLive)
 	{
 		return;
@@ -307,14 +325,9 @@ public void OnPlayerTeamPost(Handle event, const char[] name, bool dontBroadcast
 	if(g_isReady[client])
 	{
 		g_isReady[client] = false;
-		PrintToChatAll("%N moved team, they are NOT ready", client);
+		PrintToChatAll("%s %N moved team, they are NOT ready", g_tag, client);
 	}
-		
-	if(g_goingLive)
-	{
-		CheckStartMatch();
-	}
-		
+	
 	if(g_waitingForStart)
 	{
 		if(oldTeam == TEAM_PUNKS)
@@ -325,6 +338,11 @@ public void OnPlayerTeamPost(Handle event, const char[] name, bool dontBroadcast
 		{
 			g_corpStart = false;
 		}
+	}
+	
+	if(g_goingLive || oldTeam = TEAM_PUNKS || oldTeam = TEAM_CORPS)
+	{
+		CheckStartMatch();
 	}
 }
 
@@ -535,7 +553,7 @@ void EndLive()
 void CancelLive()
 {
 	EndLive();
-	PrintToChatAll("Round going Live was cancelled!");
+	PrintToChatAll("%s Round going Live was cancelled!", g_tag);
 }
 
 public Action Cmd_Start(int client, int args)
@@ -547,7 +565,7 @@ public Action Cmd_Start(int client, int args)
 	
 	if(g_isLive || g_start || !g_waitingForStart)
 	{
-		PrintToChat(client, "Not expecting !start");
+		PrintToChat(client, "%s Not expecting !start", g_tag);
 		return Plugin_Handled;
 	}
 	
@@ -658,7 +676,15 @@ public Action Cmd_Ready(int client, int args)
 	{
 		return Plugin_Handled;
 	}
-
+	
+	if(GetGameTime() < g_lastReadyTime[client] + 1.0)
+	{
+		ReplyToCommand(client, "Wait 1s between Ready commands");
+		return Plugin_Handled;
+	}
+	
+	g_lastReadyTime[client] = GetGameTime();
+	
 	char cmdName[4 + 1];
 	GetCmdArg(0, cmdName, sizeof(cmdName));
 	char readyChr = CharToLower(cmdName[3]);
@@ -695,7 +721,7 @@ void CheckStartMatch()
 {
 	if(g_isLive)
 	{
-		PrintToChatAll("Oops, trying to start match when already live");
+		LogError("Oops, trying to start match when already live");
 		return;
 	}
 	
@@ -812,7 +838,7 @@ public Action GoingLive(Handle timer)
 	
 	PlayLiveBeep();
 	++g_timerBeeps;
-	PrintToChatAll("Round is going live in: %d", (10 - g_timerBeeps));
+	PrintToChatAll("%s Round is going live in: %d", g_tag, (10 - g_timerBeeps));
 	return Plugin_Continue;
 }
 
